@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VR 全景数字孪生 | 智慧园区</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Three.js r160 ES 模块 + WebXR 插件 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 全景容器 -->
+  <div id="panorama-container"></div>
+
+  <!-- 加载层 -->
+  <div id="loading" class="loading">
+    <div class="loader-ring"></div>
+    <p>正在加载 VR 全景数字孪生...</p>
+  </div>
+
+  <!-- VR 徽章：进入 VR 后显示 -->
+  <div id="vr-badge" class="vr-badge hidden">
+    <span class="vr-badge-dot"></span>
+    VR 沉浸模式 · 转头环视 · 凝视热点 1 秒查看数据
+  </div>
+
+  <!-- HUD 覆盖层 -->
+  <div class="hud">
+    <!-- 顶部栏 -->
+    <header class="top-bar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div>
+          <h1>VR 全景数字孪生 · 智慧园区</h1>
+          <span class="brand-sub">VR Panoramic Digital Twin</span>
+        </div>
+      </div>
+      <div class="top-meta">
+        <div class="weather">
+          <span id="weather-icon">⛅</span>
+          <span id="weather-text">多云 24°C</span>
+        </div>
+        <div class="datetime">
+          <div id="clock-time">12:00:00</div>
+          <div id="clock-date">2026-07-20 星期一</div>
+        </div>
+        <div class="system-status online">
+          <span class="status-dot"></span>
+          <span>系统正常</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 左侧面板 -->
+    <aside class="panel panel-left">
+      <div class="panel-title">园区运营概览</div>
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">入驻率</div>
+          <div class="kpi-value" id="kpi-occupancy">92.4<span class="kpi-unit">%</span></div>
+          <div class="kpi-trend up">+1.2% 较昨日</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">实时总能耗</div>
+          <div class="kpi-value" id="kpi-energy">1,284<span class="kpi-unit">kWh</span></div>
+          <div class="kpi-trend down">-3.5% 环比</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">今日客流</div>
+          <div class="kpi-value" id="kpi-flow">3,421<span class="kpi-unit">人</span></div>
+          <div class="kpi-trend up">+8.7% 较昨日</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">活跃告警</div>
+          <div class="kpi-value warn" id="kpi-alert">3<span class="kpi-unit">条</span></div>
+          <div class="kpi-trend">待处理</div>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">环境监测</div>
+        <div class="env-row">
+          <span class="env-name">PM2.5</span>
+          <span class="env-bar"><span style="width: 32%"></span></span>
+          <span class="env-value" id="env-pm">32</span>
+          <span class="env-unit">μg/m³</span>
+        </div>
+        <div class="env-row">
+          <span class="env-name">温度</span>
+          <span class="env-bar"><span style="width: 62%"></span></span>
+          <span class="env-value" id="env-temp">24.6</span>
+          <span class="env-unit">°C</span>
+        </div>
+        <div class="env-row">
+          <span class="env-name">湿度</span>
+          <span class="env-bar"><span style="width: 55%"></span></span>
+          <span class="env-value" id="env-humidity">58</span>
+          <span class="env-unit">%</span>
+        </div>
+        <div class="env-row">
+          <span class="env-name">CO₂</span>
+          <span class="env-bar"><span style="width: 41%"></span></span>
+          <span class="env-value" id="env-co2">410</span>
+          <span class="env-unit">ppm</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右侧面板 -->
+    <aside class="panel panel-right">
+      <div class="panel-title">实时告警</div>
+      <div class="alert-list" id="alert-list">
+        <div class="alert-item warn">
+          <div class="alert-time">12:41:22</div>
+          <div class="alert-body">
+            <div class="alert-title">A1 主楼 3F 烟感异常</div>
+            <div class="alert-desc">烟雾浓度短暂升高，已自动通知物业</div>
+          </div>
+        </div>
+        <div class="alert-item info">
+          <div class="alert-time">12:38:05</div>
+          <div class="alert-body">
+            <div class="alert-title">P1 停车场 B2 占用率过高</div>
+            <div class="alert-desc">剩余车位不足 10%，建议引导至 B3</div>
+          </div>
+        </div>
+        <div class="alert-item danger">
+          <div class="alert-time">12:25:17</div>
+          <div class="alert-body">
+            <div class="alert-title">东门 陌生人尾随告警</div>
+            <div class="alert-desc">AI 识别到未刷卡人员跟随进入，已抓拍</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 底部面板 -->
+    <footer class="bottom-bar">
+      <div class="chart-card">
+        <div class="chart-title">24h 能耗趋势 (kWh)</div>
+        <div class="chart-wrap"><canvas id="chart-energy"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">园区车辆进出 (辆/小时)</div>
+        <div class="chart-wrap"><canvas id="chart-vehicle"></canvas></div>
+      </div>
+    </footer>
+
+    <!-- 详情弹窗（桌面用） -->
+    <div id="popup" class="popup hidden">
+      <div class="popup-header">
+        <span class="popup-icon" id="popup-icon"></span>
+        <span class="popup-title" id="popup-title"></span>
+        <button class="popup-close" id="popup-close">×</button>
+      </div>
+      <div class="popup-body" id="popup-body"></div>
+    </div>
+  </div>
+
+  <!-- 脚本：Chart.js（全局）+ VR 全景主程序（ES 模块） -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "digital-twin-local",
+  "version": "1.0.0",
+  "description": "Local static server for DigitalTwin project (LAN accessible)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:port": "node server.js"
+  },
+  "engines": { "node": ">=14" },
+  "license": "MIT"
+}
