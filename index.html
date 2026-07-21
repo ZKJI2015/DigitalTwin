@@ -158,6 +158,19 @@
       </div>
     </footer>
 
+    <!-- 视频监控小窗口 -->
+    <section class="video-panel">
+      <div class="video-panel-header">
+        <span>监控画面</span>
+        <span class="video-status">实时</span>
+      </div>
+      <div class="video-frame">
+        <video id="video-monitor" autoplay muted playsinline controls loop poster="assets/images/panorama.png">
+          <p>当前浏览器不支持视频播放。</p>
+        </video>
+      </div>
+    </section>
+
     <!-- 详情弹窗（桌面用） -->
     <div id="popup" class="popup hidden">
       <div class="popup-header">
@@ -171,6 +184,8 @@
 
   <!-- 脚本：Chart.js（全局）+ VR 全景主程序（ES 模块） -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <!-- hls.js: 在不支持原生 HLS 的浏览器上播放 m3u8 -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.5/dist/hls.min.js"></script>
   <script type="module" src="assets/js/app.js"></script>
 </body>
 </html>

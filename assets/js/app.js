@@ -130,6 +130,7 @@ function init() {
   initCharts();
   initSimulation();
   bindEvents();
+  initVideoMonitor();
 }
 
 /* ===== 时钟 ===== */
@@ -808,6 +809,64 @@ function bindEvents() {
     state.camera.updateProjectionMatrix();
     state.renderer.setSize(state.width, state.height);
   });
+}
+
+/* ===== 视频监控小窗口初始化 ===== */
+async function initVideoMonitor() {
+  const vid = document.getElementById('video-monitor');
+  if (!vid) return;
+
+  // HLS 流地址（来自用户）
+  const HLS_URL = 'http://devimages.apple.com.edgekey.net/streaming/examples/bipbop_4x3/gear2/prog_index.m3u8';
+
+  // 首先尝试原生播放（Safari 和部分浏览器支持）
+  const canPlayNative = vid.canPlayType('application/vnd.apple.mpegurl') || vid.canPlayType('application/x-mpegURL');
+  if (canPlayNative) {
+    vid.src = HLS_URL;
+    try { await vid.play(); } catch (e) { /* autoplay 可能被阻止 */ }
+    return;
+  }
+
+  // 如果浏览器不原生支持 HLS，使用 hls.js 回退（index.html 已引入 hls.js）
+  try {
+    if (window.Hls && window.Hls.isSupported()) {
+      const hls = new window.Hls();
+      hls.loadSource(HLS_URL);
+      hls.attachMedia(vid);
+      hls.on(window.Hls.Events.MANIFEST_PARSED, async () => {
+        try { await vid.play(); } catch (e) { /* autoplay blocked */ }
+      });
+      return;
+    }
+  } catch (e) {
+    console.warn('hls.js 初始化失败', e);
+  }
+
+  // 若 HLS 不可用，回退到本地文件播放（若提供）或摄像头
+  try {
+    const res = await fetch('assets/video/camera-monitor.mp4', { method: 'HEAD' });
+    if (res.ok) {
+      const src = document.createElement('source');
+      src.src = 'assets/video/camera-monitor.mp4';
+      src.type = 'video/mp4';
+      vid.appendChild(src);
+      try { vid.load(); await vid.play(); } catch (e) { }
+      return;
+    }
+  } catch (e) { }
+
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280 }, audio: false });
+      vid.srcObject = stream;
+      try { await vid.play(); } catch (e) { }
+      return;
+    } catch (err) {
+      console.warn('无法访问摄像头：', err);
+    }
+  }
+
+  // 最终保留 poster，占位并让用户手动点击播放
 }
 
 /* ===== 启动 ===== */
