@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 /* 状态 */
 const state = {
@@ -116,6 +117,13 @@ const HOTSPOTS = [
       { name: '频率', value: 50.02, unit: 'Hz' },
       { name: '功率因数', value: 0.96, unit: '' }
     ]
+  },
+  {
+    id: 'model-show',
+    name: '设备三维模型',
+    lat: 0, lon: -45,
+    type: 'model', icon: '📦', status: 'normal',
+    model: 'assets/models/test.glb'
   }
 ];
 
@@ -132,6 +140,8 @@ function init() {
   initSimulation();
   bindEvents();
   initVideoMonitor();
+  initModelViewer();
+  initDigitalHuman();
 }
 
 /* ===== 天气：从后端代理获取并更新 HUD ===== */
@@ -880,7 +890,12 @@ function bindEvents() {
     if (hits.length) {
       let obj = hits[0].object;
       while (obj && !obj.userData.hotspot) obj = obj.parent;
-      if (obj && obj.userData.hotspot) { openPopup(obj.userData.hotspot); return; }
+      if (obj && obj.userData.hotspot) {
+        const h = obj.userData.hotspot;
+        if (h.type === 'model') openModelViewer(h.model, h.name);
+        else openPopup(h);
+        return;
+      }
     }
     closePopup();
   });
@@ -973,6 +988,187 @@ async function initVideoMonitor() {
   }
 
   // 最终保留 poster，占位并让用户手动点击播放
+}
+
+/* ===== 三维模型查看器（点击模型热点，屏幕中央弹出并自动旋转） ===== */
+const modelViewer = {
+  open: false,
+  renderer: null,
+  scene: null,
+  camera: null,
+  controls: null,
+  modelGroup: null,
+  container: null,
+  rafId: null,
+  loadedPath: null
+};
+
+function initModelViewer() {
+  const wrap = document.getElementById('model-canvas-wrap');
+  if (!wrap) return;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(0, 1.1, 4.5);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  key.position.set(3, 5, 4);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0x88bbff, 0.5);
+  fill.position.set(-4, 2, -3);
+  scene.add(fill);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.autoRotate = true;          // 自动旋转
+  controls.autoRotateSpeed = 2.0;
+  controls.enablePan = false;
+  controls.minDistance = 2;
+  controls.maxDistance = 12;
+  controls.target.set(0, 0.6, 0);
+
+  modelViewer.renderer = renderer;
+  modelViewer.scene = scene;
+  modelViewer.camera = camera;
+  modelViewer.controls = controls;
+  modelViewer.container = wrap;
+  wrap.appendChild(renderer.domElement);
+
+  document.getElementById('model-viewer-close').addEventListener('click', closeModelViewer);
+  // 点击遮罩空白处关闭
+  document.getElementById('model-viewer').addEventListener('click', (e) => {
+    if (e.target.id === 'model-viewer') closeModelViewer();
+  });
+  window.addEventListener('resize', () => { if (modelViewer.open) resizeModelViewer(); });
+}
+
+function openModelViewer(glbPath, title) {
+  const overlay = document.getElementById('model-viewer');
+  if (!overlay) return;
+  const tip = document.getElementById('model-tip');
+  if (tip) tip.textContent = '';
+  const titleEl = document.getElementById('model-title');
+  if (titleEl) titleEl.textContent = title || '三维模型';
+
+  overlay.classList.remove('hidden');
+  modelViewer.open = true;
+  resizeModelViewer();
+
+  // 仅加载一次；切换不同模型时可扩展
+  if (!modelViewer.loadedPath && glbPath) {
+    const loader = new GLTFLoader();
+    loader.load(glbPath, (gltf) => {
+      const grp = new THREE.Group();
+      grp.add(gltf.scene);
+      // 居中并归一化缩放到合适大小
+      const box = new THREE.Box3().setFromObject(gltf.scene);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      grp.position.sub(center);
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      grp.scale.setScalar(2.4 / maxDim);
+      modelViewer.scene.add(grp);
+      modelViewer.modelGroup = grp;
+      modelViewer.loadedPath = glbPath;
+    }, undefined, (err) => {
+      console.error('模型加载失败：', err);
+      if (tip) tip.textContent = '模型加载失败，请确认 ' + glbPath + ' 存在';
+    });
+  }
+
+  if (!modelViewer.rafId) animateModelViewer();
+}
+
+function animateModelViewer() {
+  modelViewer.rafId = requestAnimationFrame(animateModelViewer);
+  if (modelViewer.controls) modelViewer.controls.update();
+  modelViewer.renderer.render(modelViewer.scene, modelViewer.camera);
+}
+
+function closeModelViewer() {
+  const overlay = document.getElementById('model-viewer');
+  if (overlay) overlay.classList.add('hidden');
+  modelViewer.open = false;
+  if (modelViewer.rafId) {
+    cancelAnimationFrame(modelViewer.rafId);
+    modelViewer.rafId = null;
+  }
+}
+
+function resizeModelViewer() {
+  const wrap = modelViewer.container;
+  if (!wrap) return;
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  if (!w || !h) return;
+  modelViewer.renderer.setSize(w, h, false);
+  modelViewer.camera.aspect = w / h;
+  modelViewer.camera.updateProjectionMatrix();
+}
+
+/* ===== 数字人（右下角视频，绿幕抠像透明显示） ===== */
+function initDigitalHuman() {
+  const v = document.getElementById('digital-human-video');
+  const canvas = document.getElementById('digital-human-canvas');
+  if (!v || !canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // 绿幕抠像参数（可按素材微调）
+  const KEY_LOW = 25;    // 绿溢出低于此值：完全保留（前景）
+  const KEY_HIGH = 85;   // 绿溢出高于此值：完全透明（背景）
+  const SPILL = 0.25;    // 溢色抑制强度：压低残留绿色，消除绿边
+
+  function ensureSize() {
+    if (!v.videoWidth) return;
+    // 限制处理分辨率，兼顾性能
+    const MAX = 320;
+    const scale = Math.min(1, MAX / Math.max(v.videoWidth, v.videoHeight));
+    const w = Math.max(1, Math.round(v.videoWidth * scale));
+    const h = Math.max(1, Math.round(v.videoHeight * scale));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+
+  function draw() {
+    ensureSize();
+    if (v.readyState >= 2 && canvas.width && canvas.height) {
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+      const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = frame.data;
+      for (let i = 0; i < d.length; i += 4) {
+        let r = d[i], g = d[i + 1], b = d[i + 2];
+        const maxRB = r > b ? r : b;
+        const spill = g - maxRB; // 绿色超出红/蓝的程度
+        let alpha;
+        if (spill <= KEY_LOW) {
+          alpha = 255;
+        } else if (spill >= KEY_HIGH) {
+          alpha = 0;
+        } else {
+          // 边缘羽化，避免硬边与绿边
+          alpha = 255 * (1 - (spill - KEY_LOW) / (KEY_HIGH - KEY_LOW));
+        }
+        // 溢色抑制：压低残留绿色，头发边缘不再发绿
+        if (spill > 0) g = maxRB + spill * SPILL;
+        d[i] = r;
+        d[i + 1] = g;
+        d[i + 2] = b;
+        d[i + 3] = alpha;
+      }
+      ctx.putImageData(frame, 0, 0);
+    }
+    requestAnimationFrame(draw);
+  }
+
+  v.play().catch(() => { /* 自动播放被拦截时静默忽略 */ });
+  draw();
 }
 
 /* ===== 启动 ===== */

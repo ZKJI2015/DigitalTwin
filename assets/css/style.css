@@ -614,3 +614,129 @@ html, body {
 /* VR 模式下隐藏桌面 HUD（沉浸体验） */
 body.vr-active .hud { opacity: 0; pointer-events: none; }
 body.vr-active .vr-enter-btn { opacity: 0; pointer-events: none; }
+
+/* ===================== 三维模型查看器 ===================== */
+.model-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  pointer-events: auto;
+}
+.model-viewer.hidden { display: none; }
+
+.model-card {
+  position: relative;
+  width: min(560px, 86vw);
+  height: min(560px, 80vh);
+  background: transparent;
+  overflow: hidden;
+  animation: model-pop 0.22s ease;
+}
+
+@keyframes model-pop {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+#model-canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+#model-canvas-wrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.model-header {
+  position: absolute;
+  top: 0; right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 14px 18px;
+  pointer-events: none;
+}
+
+#model-title { display: none; }
+
+.model-close {
+  background: rgba(10, 20, 40, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  font-size: 22px;
+  line-height: 1;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(4px);
+  transition: background 0.2s, color 0.2s;
+}
+.model-close:hover { background: rgba(10, 20, 40, 0.7); color: #fff; }
+
+#model-tip {
+  position: absolute;
+  bottom: 14px; left: 0; right: 0;
+  text-align: center;
+  color: #f87171;
+  font-size: 12px;
+  z-index: 2;
+}
+
+/* ===================== 数字人（右下角） ===================== */
+.digital-human {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: 184px;
+  z-index: 40;
+}
+
+.dh-header {
+  display: none;
+}
+
+.dh-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.16);
+  color: #a5f3fc;
+  font-size: 10px;
+}
+
+.dh-frame {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 100%;
+  background: transparent;
+}
+
+.dh-frame video,
+.dh-frame canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: none;
+  outline: none;
+}
+
+/* 窄屏时数字人缩小，避免遮挡过多内容 */
+@media (max-width: 900px) {
+  .digital-human { width: 140px; }
+}

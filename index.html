@@ -181,6 +181,32 @@
       </div>
       <div class="popup-body" id="popup-body"></div>
     </div>
+
+    <!-- 三维模型查看器（点击模型热点弹出，屏幕中央，自动旋转） -->
+    <div id="model-viewer" class="model-viewer hidden">
+      <div class="model-card">
+        <div class="model-header">
+          <span id="model-title">三维模型</span>
+          <button class="model-close" id="model-viewer-close" aria-label="关闭">×</button>
+        </div>
+        <div id="model-canvas-wrap"></div>
+        <div id="model-tip"></div>
+      </div>
+    </div>
+
+    <!-- 数字人（右下角） -->
+    <section id="digital-human" class="digital-human">
+      <div class="dh-header">
+        <span>数字人</span>
+        <span class="dh-status">在线</span>
+      </div>
+      <div class="dh-frame">
+        <video id="digital-human-video" autoplay muted loop playsinline style="display:none">
+          <source src="assets/video/test.mp4" type="video/mp4">
+        </video>
+        <canvas id="digital-human-canvas"></canvas>
+      </div>
+    </section>
   </div>
 
   <!-- 脚本：Chart.js（全局）+ VR 全景主程序（ES 模块） -->
