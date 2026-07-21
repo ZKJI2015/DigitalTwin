@@ -6,8 +6,7 @@
  * ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { VRButton } from 'three/addons/webxr/VRButton.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+// VRButton / GLTFLoader 非首屏必需，按需动态导入
 
 /* 状态 */
 const state = {
@@ -139,9 +138,9 @@ function init() {
   initCharts();
   initSimulation();
   bindEvents();
-  initVideoMonitor();
+  scheduleVideoMonitor();   // 监控画面在 UI 完全显示后自动加载，不阻塞首屏
   initModelViewer();
-  initDigitalHuman();
+  // 数字人改为「点击热点时再加载」，见 ensureDigitalHumanLoaded()
 }
 
 /* ===== 天气：从后端代理获取并更新 HUD ===== */
@@ -171,35 +170,41 @@ const WEATHERCODE_MAP = {
   95: { icon: '⛈️', text: '雷暴' }
 };
 
-async function fetchWeatherByCoords(lat, lon) {
-  const res = await fetch(`/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+function fetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
+async function fetchWeatherByCoords(lat, lon, timeoutMs = 4000) {
+  const res = await fetchWithTimeout(`/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, timeoutMs);
   if (!res.ok) throw new Error('weather fetch failed');
   return res.json();
 }
 
-async function fetchWeatherByCity(q) {
-  const res = await fetch(`/api/weather?q=${encodeURIComponent(q)}`);
+async function fetchWeatherByCity(q, timeoutMs = 4000) {
+  const res = await fetchWithTimeout(`/api/weather?q=${encodeURIComponent(q)}`, timeoutMs);
   if (!res.ok) throw new Error('weather fetch failed');
   return res.json();
 }
 
-async function updateWeather() {
+async function updateWeather(timeoutMs = 4000) {
   try {
     let data = null;
     if (USE_GEOLOCATION && navigator.geolocation) {
       data = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('geolocation timeout')), 5000);
+        const timer = setTimeout(() => reject(new Error('geolocation timeout')), 4000);
         navigator.geolocation.getCurrentPosition(async (pos) => {
           clearTimeout(timer);
-          try { resolve(await fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude)); }
+          try { resolve(await fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude, timeoutMs)); }
           catch (e) { reject(e); }
-        }, () => reject(new Error('geolocation denied')), { timeout: 5000 });
+        }, () => reject(new Error('geolocation denied')), { timeout: 4000 });
       }).catch(async () => {
         // geolocation 失败则回退到默认城市
-        return await fetchWeatherByCity(DEFAULT_CITY);
+        return await fetchWeatherByCity(DEFAULT_CITY, timeoutMs);
       });
     } else {
-      data = await fetchWeatherByCity(DEFAULT_CITY);
+      data = await fetchWeatherByCity(DEFAULT_CITY, timeoutMs);
     }
 
     if (!data) return;
@@ -244,9 +249,16 @@ async function updateWeather() {
 }
 
 function initWeather() {
-  // 首次加载与定时刷新（10 分钟）
-  setTimeout(updateWeather, 1500);
-  setInterval(updateWeather, 10 * 60 * 1000);
+  // 首屏不请求天气；用户点击天气区域时才发起首次请求，之后每 10 分钟自动刷新
+  const el = document.getElementById('weather');
+  if (!el) return;
+  let started = false;
+  el.addEventListener('click', () => {
+    if (started) return;
+    started = true;
+    updateWeather(4000);
+    setInterval(() => updateWeather(4000), 10 * 60 * 1000);
+  });
 }
 
 /* ===== 时钟 ===== */
@@ -280,14 +292,16 @@ function initThreeJS() {
   state.renderer.xr.enabled = true;            // 关键：启用 WebXR
   container.appendChild(state.renderer.domElement);
 
-  // VR 入口按钮
-  const vrBtn = VRButton.createButton(state.renderer);
-  vrBtn.classList.add('vr-enter-btn');
-  document.body.appendChild(vrBtn);
+  // VR 入口按钮（按需加载，不阻塞首屏）
+  import('three/addons/webxr/VRButton.js').then(({ VRButton }) => {
+    const vrBtn = VRButton.createButton(state.renderer);
+    vrBtn.classList.add('vr-enter-btn');
+    document.body.appendChild(vrBtn);
+  }).catch(err => console.warn('VRButton 加载失败', err));
 
   // 全景球：纹理贴在球体内壁
   const loader = new THREE.TextureLoader();
-  loader.load('assets/images/panorama.png', (texture) => {
+  loader.load('assets/images/panorama.jpg', (texture) => {
     texture.colorSpace = THREE.SRGBColorSpace;
     const geo = new THREE.SphereGeometry(500, 64, 64);
     geo.scale(-1, 1, 1);                       // 翻转法线，从内部可见
@@ -546,6 +560,7 @@ function updateInfoPanel() {
 
 /* VR 选中热点：再凝视一次关闭 */
 function selectHotspotVR(hotspot) {
+  ensureDigitalHumanLoaded();   // VR 凝视热点时再加载数字人
   if (state.activeHotspot && state.activeHotspot.id === hotspot.id) {
     hideInfoPanel();
   } else {
@@ -892,6 +907,7 @@ function bindEvents() {
       while (obj && !obj.userData.hotspot) obj = obj.parent;
       if (obj && obj.userData.hotspot) {
         const h = obj.userData.hotspot;
+        ensureDigitalHumanLoaded();   // 点击热点时再加载数字人
         if (h.type === 'model') openModelViewer(h.model, h.name);
         else openPopup(h);
         return;
@@ -933,6 +949,24 @@ function bindEvents() {
 }
 
 /* ===== 视频监控小窗口初始化 ===== */
+/* 监控画面默认只显示 poster；等 UI 完全显示（首屏渲染完、主线程空闲）后再自动加载，不阻塞打开速度 */
+let videoMonitorLoaded = false;
+function ensureVideoMonitorLoaded() {
+  if (videoMonitorLoaded) return;
+  videoMonitorLoaded = true;
+  initVideoMonitor();
+}
+
+// 等 UI 完全显示后再自动加载监控：优先 requestIdleCallback（主线程空闲），兜底 window.load
+function scheduleVideoMonitor() {
+  const start = () => ensureVideoMonitorLoaded();
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(start, { timeout: 3000 });
+  } else {
+    window.addEventListener('load', start, { once: true });
+  }
+}
+
 async function initVideoMonitor() {
   const vid = document.getElementById('video-monitor');
   if (!vid) return;
@@ -1061,23 +1095,25 @@ function openModelViewer(glbPath, title) {
 
   // 仅加载一次；切换不同模型时可扩展
   if (!modelViewer.loadedPath && glbPath) {
-    const loader = new GLTFLoader();
-    loader.load(glbPath, (gltf) => {
-      const grp = new THREE.Group();
-      grp.add(gltf.scene);
-      // 居中并归一化缩放到合适大小
-      const box = new THREE.Box3().setFromObject(gltf.scene);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      grp.position.sub(center);
-      const maxDim = Math.max(size.x, size.y, size.z) || 1;
-      grp.scale.setScalar(2.4 / maxDim);
-      modelViewer.scene.add(grp);
-      modelViewer.modelGroup = grp;
-      modelViewer.loadedPath = glbPath;
-    }, undefined, (err) => {
-      console.error('模型加载失败：', err);
-      if (tip) tip.textContent = '模型加载失败，请确认 ' + glbPath + ' 存在';
+    import('three/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+      const loader = new GLTFLoader();
+      loader.load(glbPath, (gltf) => {
+        const grp = new THREE.Group();
+        grp.add(gltf.scene);
+        // 居中并归一化缩放到合适大小
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        grp.position.sub(center);
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        grp.scale.setScalar(2.4 / maxDim);
+        modelViewer.scene.add(grp);
+        modelViewer.modelGroup = grp;
+        modelViewer.loadedPath = glbPath;
+      }, undefined, (err) => {
+        console.error('模型加载失败：', err);
+        if (tip) tip.textContent = '模型加载失败，请确认 ' + glbPath + ' 存在';
+      });
     });
   }
 
@@ -1112,10 +1148,21 @@ function resizeModelViewer() {
 }
 
 /* ===== 数字人（右下角视频，绿幕抠像透明显示） ===== */
+/* 点击/凝视热点时才首次加载数字人，避免首屏占用带宽与渲染 */
+let digitalHumanLoaded = false;
+function ensureDigitalHumanLoaded() {
+  if (digitalHumanLoaded) return;
+  digitalHumanLoaded = true;
+  initDigitalHuman();
+  const panel = document.getElementById('digital-human');
+  if (panel) panel.classList.add('is-ready');
+}
+
 function initDigitalHuman() {
   const v = document.getElementById('digital-human-video');
   const canvas = document.getElementById('digital-human-canvas');
   if (!v || !canvas) return;
+  if (!v.getAttribute('src')) v.src = 'assets/video/test.mp4';  // 按需设置源，首屏不加载
   const ctx = canvas.getContext('2d');
 
   // 绿幕抠像参数（可按素材微调）

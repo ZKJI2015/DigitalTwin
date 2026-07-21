@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const zlib = require('zlib');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT, 10) || 8080;
@@ -21,6 +22,22 @@ const MIME = {
   '.wasm': 'application/wasm'
 };
 
+// 静态资源缓存策略：图片/字体长期缓存，JS/CSS 一天，HTML 不缓存
+const CACHE_POLICY = {
+  '.html': 'no-cache',
+  '.js': 'public, max-age=86400',
+  '.css': 'public, max-age=86400',
+  '.png': 'public, max-age=604800, immutable',
+  '.jpg': 'public, max-age=604800, immutable',
+  '.jpeg': 'public, max-age=604800, immutable',
+  '.svg': 'public, max-age=604800, immutable',
+  '.json': 'public, max-age=3600',
+  '.txt': 'public, max-age=3600',
+  '.wasm': 'public, max-age=604800, immutable'
+};
+
+const GZIP_EXTS = new Set(['.html','.js','.css','.json','.txt','.svg','.wasm']);
+
 function send404(res) {
   res.statusCode = 404;
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -33,14 +50,25 @@ function sendJSON(res, data, code = 200) {
   res.end(JSON.stringify(data));
 }
 
-function sendFile(res, filePath) {
+function sendFile(req, res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const mime = MIME[ext] || 'application/octet-stream';
+  const cache = CACHE_POLICY[ext] || 'no-cache';
   res.statusCode = 200;
   res.setHeader('Content-Type', mime);
-  res.setHeader('Cache-Control', 'no-cache');
-  const stream = fs.createReadStream(filePath);
+  res.setHeader('Cache-Control', cache);
+
+  let stream = fs.createReadStream(filePath);
   stream.on('error', () => send404(res));
+
+  // 对文本类资源开启 gzip（已压缩的图片/视频跳过）
+  const acceptEnc = (req.headers['accept-encoding'] || '').toLowerCase();
+  if (GZIP_EXTS.has(ext) && acceptEnc.includes('gzip')) {
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Vary', 'Accept-Encoding');
+    stream = stream.pipe(zlib.createGzip());
+  }
+
   stream.pipe(res);
 }
 
@@ -159,14 +187,14 @@ const server = http.createServer((req, res) => {
       const stat = fs.statSync(filePath);
       if (stat.isDirectory()) {
         const index = path.join(filePath, 'index.html');
-        if (fs.existsSync(index)) { sendFile(res, index); return; }
+        if (fs.existsSync(index)) { sendFile(req, res, index); return; }
         send404(res); return;
       }
-      sendFile(res, filePath);
+      sendFile(req, res, filePath);
     } else {
       // fallback to index.html for SPA-like usage
       const index = path.join(ROOT, 'index.html');
-      if (fs.existsSync(index)) { sendFile(res, index); return; }
+      if (fs.existsSync(index)) { sendFile(req, res, index); return; }
       send404(res);
     }
   } catch (err) {

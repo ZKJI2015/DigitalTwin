@@ -133,6 +133,8 @@ html, body {
 .weather {
   display: flex; align-items: center; gap: 6px;
   font-size: 14px; color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
 }
 
 .weather-city {
@@ -700,6 +702,17 @@ body.vr-active .vr-enter-btn { opacity: 0; pointer-events: none; }
   bottom: 18px;
   width: 184px;
   z-index: 40;
+  /* 默认隐藏，点击热点后再加载并淡入，避免首屏占用带宽与渲染 */
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity .4s ease, transform .4s ease;
+}
+
+.digital-human.is-ready {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .dh-header {

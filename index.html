@@ -5,15 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>VR 全景数字孪生 | 智慧园区</title>
   <link rel="stylesheet" href="assets/css/style.css">
-  <!-- Three.js r160 ES 模块 + WebXR 插件 -->
+  <!-- Three.js r160 本地库（assets/lib/three） -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "./assets/lib/three/build/three.module.js",
+      "three/addons/": "./assets/lib/three/examples/jsm/"
     }
   }
   </script>
+  <!-- 关键模块预加载，避免 import 时才串行下载 -->
+  <link rel="modulepreload" href="./assets/lib/three/build/three.module.js">
+  <link rel="modulepreload" href="./assets/lib/three/examples/jsm/controls/OrbitControls.js">
 </head>
 <body>
   <!-- 全景容器 -->
@@ -49,10 +52,10 @@
         </div>
       </div>
       <div class="top-meta">
-        <div class="weather">
+        <div class="weather" id="weather" title="点击刷新天气">
           <span id="weather-icon">⛅</span>
-          <span id="weather-text">多云 24°C</span>
-          <span id="weather-city" class="weather-city">北京</span>
+          <span id="weather-text">点击查看天气</span>
+          <span id="weather-city" class="weather-city">—</span>
         </div>
         <div class="datetime">
           <div id="clock-time">12:00:00</div>
@@ -166,7 +169,7 @@
         <span class="video-status">实时</span>
       </div>
       <div class="video-frame">
-        <video id="video-monitor" autoplay muted playsinline controls loop poster="assets/images/panorama.png">
+        <video id="video-monitor" muted playsinline controls loop poster="assets/images/panorama.jpg">
           <p>当前浏览器不支持视频播放。</p>
         </video>
       </div>
@@ -201,18 +204,16 @@
         <span class="dh-status">在线</span>
       </div>
       <div class="dh-frame">
-        <video id="digital-human-video" autoplay muted loop playsinline style="display:none">
-          <source src="assets/video/test.mp4" type="video/mp4">
-        </video>
+        <video id="digital-human-video" muted loop playsinline style="display:none"></video>
         <canvas id="digital-human-canvas"></canvas>
       </div>
     </section>
   </div>
 
   <!-- 脚本：Chart.js（全局）+ VR 全景主程序（ES 模块） -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <script src="./assets/lib/chart.js/chart.min.js"></script>
   <!-- hls.js: 在不支持原生 HLS 的浏览器上播放 m3u8 -->
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.5/dist/hls.min.js"></script>
+  <script src="./assets/lib/hls.js/hls.min.js"></script>
   <script type="module" src="assets/js/app.js"></script>
 </body>
 </html>
