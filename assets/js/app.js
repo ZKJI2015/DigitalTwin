@@ -122,6 +122,7 @@ const HOTSPOTS = [
 /* ===== 初始化入口 ===== */
 function init() {
   initClock();
+  initWeather();
   initThreeJS();
   createHotspots3D();
   createReticle();
@@ -131,6 +132,111 @@ function init() {
   initSimulation();
   bindEvents();
   initVideoMonitor();
+}
+
+/* ===== 天气：从后端代理获取并更新 HUD ===== */
+// 默认城市（geolocation 不可用或失败时显示）。可改成任意城市，如 '上海' '深圳'
+const DEFAULT_CITY = '北京';
+// 是否优先使用浏览器定位（true=优先定位真实位置；false=始终显示 DEFAULT_CITY）
+const USE_GEOLOCATION = true;
+
+const WEATHERCODE_MAP = {
+  0: { icon: '☀️', text: '晴' },
+  1: { icon: '🌤️', text: '少云' },
+  2: { icon: '⛅', text: '多云' },
+  3: { icon: '☁️', text: '阴' },
+  45: { icon: '🌫️', text: '雾' },
+  48: { icon: '🌫️', text: '霜/薄雾' },
+  51: { icon: '🌦️', text: '小雨' },
+  53: { icon: '🌦️', text: '中雨' },
+  55: { icon: '🌧️', text: '毛毛雨' },
+  61: { icon: '🌧️', text: '小雨' },
+  63: { icon: '🌧️', text: '中雨' },
+  65: { icon: '🌧️', text: '大雨' },
+  71: { icon: '❄️', text: '小雪' },
+  73: { icon: '❄️', text: '中雪' },
+  75: { icon: '❄️', text: '大雪' },
+  80: { icon: '🌧️', text: '阵雨' },
+  81: { icon: '🌧️', text: '强阵雨' },
+  95: { icon: '⛈️', text: '雷暴' }
+};
+
+async function fetchWeatherByCoords(lat, lon) {
+  const res = await fetch(`/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+  if (!res.ok) throw new Error('weather fetch failed');
+  return res.json();
+}
+
+async function fetchWeatherByCity(q) {
+  const res = await fetch(`/api/weather?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error('weather fetch failed');
+  return res.json();
+}
+
+async function updateWeather() {
+  try {
+    let data = null;
+    if (USE_GEOLOCATION && navigator.geolocation) {
+      data = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('geolocation timeout')), 5000);
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          clearTimeout(timer);
+          try { resolve(await fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude)); }
+          catch (e) { reject(e); }
+        }, () => reject(new Error('geolocation denied')), { timeout: 5000 });
+      }).catch(async () => {
+        // geolocation 失败则回退到默认城市
+        return await fetchWeatherByCity(DEFAULT_CITY);
+      });
+    } else {
+      data = await fetchWeatherByCity(DEFAULT_CITY);
+    }
+
+    if (!data) return;
+    const elIcon = document.getElementById('weather-icon');
+    const elText = document.getElementById('weather-text');
+    const elCity = document.getElementById('weather-city');
+
+    // 显示城市名（定位成功时取服务端 city_name，否则用默认城市）
+    if (elCity) elCity.textContent = data.city_name || DEFAULT_CITY;
+
+    // Open-Meteo 新版响应（current 字段，无需 API Key）
+    if (data.current) {
+      const c = data.current;
+      const temp = typeof c.temperature_2m === 'number' ? Math.round(c.temperature_2m) : '';
+      const code = c.weather_code;
+      const wmap = WEATHERCODE_MAP[code] || { icon: '⛅', text: '' };
+      const hum = typeof c.relative_humidity_2m === 'number' ? Math.round(c.relative_humidity_2m) : '';
+      const wind = typeof c.wind_speed_10m === 'number' ? Math.round(c.wind_speed_10m) : '';
+      if (elIcon) elIcon.textContent = wmap.icon;
+      let txt = `${wmap.text} ${temp}°C`;
+      if (hum !== '') txt += ` · 湿度${hum}%`;
+      if (wind !== '') txt += ` · 风速${wind}km/h`;
+      if (elText) elText.textContent = txt;
+      return;
+    }
+
+    // Open-Meteo 旧版响应（current_weather 字段）
+    if (data.current_weather) {
+      const cw = data.current_weather;
+      const temp = typeof cw.temperature === 'number' ? Math.round(cw.temperature) : '';
+      const code = cw.weathercode;
+      const wmap = WEATHERCODE_MAP[code] || { icon: '⛅', text: '' };
+      if (elIcon) elIcon.textContent = wmap.icon;
+      if (elText) elText.textContent = `${wmap.text} ${temp}°C`;
+      return;
+    }
+
+    console.warn('天气数据格式未知：', data);
+  } catch (err) {
+    console.warn('更新天气失败：', err);
+  }
+}
+
+function initWeather() {
+  // 首次加载与定时刷新（10 分钟）
+  setTimeout(updateWeather, 1500);
+  setInterval(updateWeather, 10 * 60 * 1000);
 }
 
 /* ===== 时钟 ===== */

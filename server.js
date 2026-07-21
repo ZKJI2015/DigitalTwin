@@ -49,10 +49,12 @@ function proxyWeather(req, res) {
   const parsed = url.parse(req.url, true);
   const query = parsed.query;
 
+  const CURRENT_FIELDS = 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m';
+
   let apiUrl;
   if (query.lat && query.lon) {
     // 按经纬度查询
-    apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${query.lat}&longitude=${query.lon}&current_weather=true&timezone=auto`;
+    apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${query.lat}&longitude=${query.lon}&current=${CURRENT_FIELDS}&timezone=auto`;
   } else if (query.q) {
     // 按城市名查询（使用 geocoding API 先转坐标）
     const city = encodeURIComponent(query.q);
@@ -75,7 +77,7 @@ function proxyWeather(req, res) {
             return;
           }
           const loc = geoData.results[0];
-          const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true&timezone=auto`;
+          const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=${CURRENT_FIELDS}&timezone=auto`;
           https.get(weatherUrl, (wRes) => {
             let wBody = '';
             wRes.on('data', chunk => wBody += chunk);
@@ -97,18 +99,47 @@ function proxyWeather(req, res) {
     return;
   }
 
-  // 直接按经纬度查询
-  https.get(apiUrl, (wRes) => {
-    let body = '';
-    wRes.on('data', chunk => body += chunk);
-    wRes.on('end', () => {
+  // 直接按经纬度查询：先反向地理编码获取城市名，再合并到天气结果
+  const revUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${query.lat}&longitude=${query.lon}&localityLanguage=zh`;
+  https.get(revUrl, (revRes) => {
+    let revBody = '';
+    revRes.on('data', chunk => revBody += chunk);
+    revRes.on('end', () => {
+      let cityName = '';
       try {
-        sendJSON(res, JSON.parse(body));
-      } catch (e) {
-        sendJSON(res, { error: '天气数据解析失败' }, 500);
-      }
+        const revData = JSON.parse(revBody);
+        cityName = revData.city || revData.locality || revData.principalSubdivision || '';
+      } catch (e) { /* 反向地理编码解析失败，忽略 */ }
+
+      https.get(apiUrl, (wRes) => {
+        let wBody = '';
+        wRes.on('data', chunk => wBody += chunk);
+        wRes.on('end', () => {
+          try {
+            const weatherData = JSON.parse(wBody);
+            // 有城市名就用城市名，否则用时区兜底（如 Asia/Shanghai）
+            weatherData.city_name = cityName || (weatherData.timezone || '');
+            sendJSON(res, weatherData);
+          } catch (e) {
+            sendJSON(res, { error: '天气数据解析失败' }, 500);
+          }
+        });
+      }).on('error', () => sendJSON(res, { error: '天气 API 请求失败' }, 502));
     });
-  }).on('error', () => sendJSON(res, { error: '天气 API 请求失败' }, 502));
+  }).on('error', () => {
+    // 反向地理编码服务不可用时，仍返回天气（城市名留空，前端回退到默认城市）
+    https.get(apiUrl, (wRes) => {
+      let wBody = '';
+      wRes.on('data', chunk => wBody += chunk);
+      wRes.on('end', () => {
+        try {
+          sendJSON(res, JSON.parse(wBody));
+        } catch (e) {
+          sendJSON(res, { error: '天气数据解析失败' }, 500);
+        }
+      });
+    }).on('error', () => sendJSON(res, { error: '天气 API 请求失败' }, 502));
+  });
 }
 
 const server = http.createServer((req, res) => {
