@@ -314,20 +314,24 @@ function initThreeJS() {
     document.body.appendChild(vrBtn);
   }).catch(err => console.warn('VRButton 加载失败', err));
 
-  // 全景球：纹理贴在球体内壁
-  const loader = new THREE.TextureLoader();
-  loader.load('assets/images/panorama.jpg', (texture) => {
-    texture.colorSpace = THREE.SRGBColorSpace;
-    const geo = new THREE.SphereGeometry(500, 64, 64);
-    geo.scale(-1, 1, 1);                       // 翻转法线，从内部可见
-    const mat = new THREE.MeshBasicMaterial({ map: texture });
-    state.scene.add(new THREE.Mesh(geo, mat));
-    document.getElementById('loading').classList.add('hidden');
-  }, undefined, (err) => {
-    console.error('全景图加载失败:', err);
-    document.getElementById('loading').innerHTML =
-      '<p style="color:#f87171">全景图加载失败，请检查网络或文件路径</p>';
-  });
+  // 全景：6 张立方体贴图（右/左/上/下/前/后），设为场景背景，相机在中心环视
+  // 顺序对应 Three.js 立方体贴图：[+X, -X, +Y, -Y, +Z, -Z]
+  const cubeLoader = new THREE.CubeTextureLoader();
+  cubeLoader.setPath('assets/images/vr/');
+  cubeLoader.load(
+    ['pano_r.jpg', 'pano_l.jpg', 'pano_u.jpg', 'pano_d.jpg', 'pano_f.jpg', 'pano_b.jpg'],
+    (cubeTex) => {
+      cubeTex.colorSpace = THREE.SRGBColorSpace;
+      state.scene.background = cubeTex;
+      document.getElementById('loading').classList.add('hidden');
+    },
+    undefined,
+    (err) => {
+      console.error('全景图加载失败:', err);
+      document.getElementById('loading').innerHTML =
+        '<p style="color:#f87171">全景图加载失败，请检查 assets/images/vr/ 下的 6 张图</p>';
+    }
+  );
 
   // 桌面控制器：拖拽环视（原地旋转）
   state.controls = new OrbitControls(state.camera, state.renderer.domElement);
