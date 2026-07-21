@@ -145,7 +145,7 @@ function init() {
 
 /* ===== 天气：从后端代理获取并更新 HUD ===== */
 // 默认城市（geolocation 不可用或失败时显示）。可改成任意城市，如 '上海' '深圳'
-const DEFAULT_CITY = '北京';
+const DEFAULT_CITY = '上海';
 // 是否优先使用浏览器定位（true=优先定位真实位置；false=始终显示 DEFAULT_CITY）
 const USE_GEOLOCATION = true;
 
@@ -188,6 +188,16 @@ async function fetchWeatherByCity(q, timeoutMs = 4000) {
   return res.json();
 }
 
+// IP 地理定位回退：浏览器定位在非安全上下文（局域网 http）会被禁用，
+// 此时用公网 IP 粗略定位城市（请求从浏览器走公网，可拿到真实城市）
+async function fetchCityByIp(timeoutMs = 4000) {
+  const res = await fetchWithTimeout('https://ipapi.co/json/', timeoutMs);
+  if (!res.ok) throw new Error('ip geo failed');
+  const d = await res.json();
+  if (!d.city) throw new Error('no city in ip geo');
+  return d.city;
+}
+
 async function updateWeather(timeoutMs = 4000) {
   try {
     let data = null;
@@ -200,8 +210,13 @@ async function updateWeather(timeoutMs = 4000) {
           catch (e) { reject(e); }
         }, () => reject(new Error('geolocation denied')), { timeout: 4000 });
       }).catch(async () => {
-        // geolocation 失败则回退到默认城市
-        return await fetchWeatherByCity(DEFAULT_CITY, timeoutMs);
+        // geolocation 不可用/被拒：尝试 IP 地理定位（非安全上下文也能粗略定位），再失败回退默认城市
+        try {
+          const city = await fetchCityByIp(timeoutMs);
+          return await fetchWeatherByCity(city, timeoutMs);
+        } catch (e) {
+          return await fetchWeatherByCity(DEFAULT_CITY, timeoutMs);
+        }
       });
     } else {
       data = await fetchWeatherByCity(DEFAULT_CITY, timeoutMs);
@@ -249,16 +264,16 @@ async function updateWeather(timeoutMs = 4000) {
 }
 
 function initWeather() {
-  // 首屏不请求天气；用户点击天气区域时才发起首次请求，之后每 10 分钟自动刷新
-  const el = document.getElementById('weather');
-  if (!el) return;
-  let started = false;
-  el.addEventListener('click', () => {
-    if (started) return;
-    started = true;
+  // UI 完全显示（首屏渲染完、主线程空闲）后自动请求天气（优先用当前位置），之后每 10 分钟刷新
+  const start = () => {
     updateWeather(4000);
     setInterval(() => updateWeather(4000), 10 * 60 * 1000);
-  });
+  };
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(start, { timeout: 3000 });
+  } else {
+    window.addEventListener('load', start, { once: true });
+  }
 }
 
 /* ===== 时钟 ===== */
