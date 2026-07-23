@@ -1,0 +1,28 @@
+name: Deploy to Gitee Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Gitee Pages
+        uses: yanglbme/gitee-pages-action@main
+        with:
+          # 你的 Gitee 用户名（在 GitHub Secrets 中配置）
+          gitee_username: ${{ secrets.GITEE_USERNAME }}
+          # 方式一：Gitee 账号密码（在 Secrets 中配置 GITEE_PASSWORD）
+          gitee_password: ${{ secrets.GITEE_PASSWORD }}
+          # 方式二（推荐，更稳）：Gitee 私人令牌，见下文说明。
+          # 此时请把上面 gitee_password 删掉，改用下面这行：
+          # gitee_token: ${{ secrets.GITEE_TOKEN }}
+          # 要部署的仓库，格式 owner/repo（这里用同一个用户名 + DigitalTwin）
+          gitee_repo: ${{ secrets.GITEE_USERNAME }}/DigitalTwin
+          branch: main
+          https: true
