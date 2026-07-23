@@ -143,7 +143,7 @@ function init() {
   // 数字人改为「点击热点时再加载」，见 ensureDigitalHumanLoaded()
 }
 
-/* ===== 天气：从后端代理获取并更新 HUD ===== */
+/* ===== 天气：前端直连 Open-Meteo（支持 CORS，无需后端代理） ===== */
 // 默认城市（geolocation 不可用或失败时显示）。可改成任意城市，如 '上海' '深圳'
 const DEFAULT_CITY = '上海';
 // 是否优先使用浏览器定位（true=优先定位真实位置；false=始终显示 DEFAULT_CITY）
@@ -176,16 +176,38 @@ function fetchWithTimeout(url, timeoutMs) {
   return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(id));
 }
 
+const OPEN_METEO_FIELDS = 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m';
+
+// 按经纬度直连 Open-Meteo，并用 bigdatacloud 反向地理编码获取城市名（CORS 友好）
 async function fetchWeatherByCoords(lat, lon, timeoutMs = 4000) {
-  const res = await fetchWithTimeout(`/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, timeoutMs);
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current=${OPEN_METEO_FIELDS}&timezone=auto`;
+  const res = await fetchWithTimeout(url, timeoutMs);
   if (!res.ok) throw new Error('weather fetch failed');
-  return res.json();
+  const data = await res.json();
+  data.city_name = '';
+  try {
+    const revRes = await fetchWithTimeout(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`, timeoutMs);
+    if (revRes.ok) {
+      const rev = await revRes.json();
+      data.city_name = rev.city || rev.locality || rev.principalSubdivision || '';
+    }
+  } catch (e) { /* 反向地理编码失败则城市名留空 */ }
+  return data;
 }
 
+// 按城市名：先 geocoding 转坐标，再直连 Open-Meteo
 async function fetchWeatherByCity(q, timeoutMs = 4000) {
-  const res = await fetchWithTimeout(`/api/weather?q=${encodeURIComponent(q)}`, timeoutMs);
+  const geoRes = await fetchWithTimeout(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=zh`, timeoutMs);
+  if (!geoRes.ok) throw new Error('geocoding failed');
+  const geo = await geoRes.json();
+  if (!geo.results || geo.results.length === 0) throw new Error('city not found');
+  const loc = geo.results[0];
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=${OPEN_METEO_FIELDS}&timezone=auto`;
+  const res = await fetchWithTimeout(url, timeoutMs);
   if (!res.ok) throw new Error('weather fetch failed');
-  return res.json();
+  const data = await res.json();
+  data.city_name = loc.name || loc.admin1 || q;
+  return data;
 }
 
 // IP 地理定位回退：浏览器定位在非安全上下文（局域网 http）会被禁用，
