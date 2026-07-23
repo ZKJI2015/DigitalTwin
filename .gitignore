@@ -5,4 +5,7 @@ npm-debug.log*
 .vscode/
 dist/
 build/
+# 例外：保留 vendored 的 three.js 库（随仓库发布，供 GitHub Pages 静态托管使用）
+!assets/lib/three/build/
+!assets/lib/three/build/**
 /.parcel-cache
